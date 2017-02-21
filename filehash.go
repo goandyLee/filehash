@@ -1,18 +1,19 @@
 package main
 
 import (
-	"path/filepath"
+        "path/filepath"
         "crypto/sha1"
+        "bytes"
         "time"
-	"fmt"
-	"os"
+        "fmt"
+        "os"
         "io"
 )
 
 var (
-    pattern = "*go"
-    count =0
-    hashmapfile *os.File
+    pattern string
+    count = 0
+    buffer bytes.Buffer
 )
 
 func check(err error) {
@@ -21,7 +22,7 @@ func check(err error) {
     }
 }
 
-func makerHash(filepath string) {
+func makerHash(filepath string) error {
     tempFile, err1 := os.Open(filepath)
     check(err1)
     defer tempFile.Close()
@@ -34,23 +35,27 @@ func makerHash(filepath string) {
     check(err3)
 
     tempStr := fmt.Sprintf("%s,%X,%d\n", tempFileInfo.Name(), fileHash.Sum(nil), tempFileInfo.Size())
-    //fmt.Println(tempStr)
-    hashmapfile.WriteString(tempStr)
+    // 海量文件另议
+    buffer.WriteString(tempStr)
     count++
+
+    return nil
 }
 
 /**
  * walkFunc:  
  * Desc:
- * Return:
+ *     在指定目录下递归统计文件
  */
 func walkFunc(path1 string, info os.FileInfo, err error) error {
     ok, err := filepath.Match(pattern, info.Name())
     if ok {
         if dirFlag := info.IsDir(); dirFlag {
+            // 遇到匹配目录，跳过目录下文件及子目录
             //fmt.Println("skip dir:",path1)
             return filepath.SkipDir
         }
+        // 遇到匹配文件，跳过当前文件
         //fmt.Println("skip file:",path1)
         return nil
     }
@@ -59,20 +64,31 @@ func walkFunc(path1 string, info os.FileInfo, err error) error {
        return nil
     }
 
-    makerHash(path1)
+    err = makerHash(path1)
+    check(err)
+
     return nil
 }
 
 func main() {
-    var err0 error
+    if argc := len(os.Args); argc != 3{
+        fmt.Println("usage: filehash DIR PATTERN")
+        return
+    } 
+
+    pattern = os.Args[2]
+    dir := os.Args[1]
 
     t1 := time.Now()
 
-    hashmapfile, err0 = os.OpenFile("./hashmap.txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+    filepath.Walk(dir, walkFunc)
+
+    hashmapfile, err0 := os.OpenFile("./hashmap.txt", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
     check(err0)
     defer hashmapfile.Close()
 
-    filepath.Walk("./", walkFunc)
+    _, err0 = hashmapfile.WriteString(buffer.String())
+    check(err0)
 
     t2 := time.Now()
     fmt.Printf("filecount:%d, cost:%d\n", count, t2.Sub(t1)/1000000000)
